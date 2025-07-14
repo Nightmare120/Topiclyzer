@@ -1,0 +1,12 @@
+.venv
+question_papers/
+webpage.html
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+main.py
+extracted_question.txt
+extracted_question.json
+output.json
+*.md
