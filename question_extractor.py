@@ -30,13 +30,15 @@ def extract_text_from_pdf(pdf_path):
         print(f"An error occurred while reading the PDF: {e}")
     return text
 
-def analyze_text_with_gemini(text_content, pdf_file_name):
+def analyze_text_with_gemini(text_content, pdf_file_name,topic_to_find):
     """
     Sends text content to Gemini AI to extract questions related to topic_to_find
     along with their surrounding context.
 
     Args:
         text_content (str): The text extracted from the PDF.
+        pdf_file_name (str): pdf file name.
+        topic_to_find (str): topic to find in pdf.
 
     Returns:
         str: The response from Gemini AI containing the identified questions and their context.
@@ -127,8 +129,7 @@ def extract_json_from_response(response_text):
     else:
         raise ValueError("No JSON code block found in the response.")
     
-if __name__ == "__main__":
-    
+def question_extractor():
     # Asking for file paths from the User
     pdf_folder = input("Enter the path to the folder containing PDF files: ").strip() or "question_papers"
     # output_file_name = input("Enter the name of the output file (default: extracted_question.txt): ").strip() or "extracted_question.txt"
@@ -156,7 +157,7 @@ if __name__ == "__main__":
                 print("PDF text extraction complete. Analyzing with Gemini AI...")
                 
                 # Step 2: Analyze text with Gemini AI
-                relevant_questions = analyze_text_with_gemini(pdf_content, pdf_file_name)
+                relevant_questions = analyze_text_with_gemini(pdf_content, pdf_file_name,topic_to_find)
     
                 # Step 3: Write extracted questions to a file
                 if relevant_questions and relevant_questions != "No relevant questions found." and relevant_questions != "Error during AI analysis.":
@@ -170,3 +171,7 @@ if __name__ == "__main__":
                 print(f"Could not extract content from {pdf_file_name}. Skipping analysis for this file.")
 
         print("\n--- All PDF files processed. Check 'extracted_question.txt' for results. ---")
+
+if __name__ == "__main__":
+    question_extractor()
+    

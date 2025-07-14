@@ -4,7 +4,7 @@ webpage.html
 __pycache__/
 *.pyo
 *.pyd
-main.py
+temp.py
 extracted_question.txt
 extracted_question.json
 output.json
