@@ -1,6 +1,8 @@
+import re
 import fitz  # PyMuPDF for PDF reading
 import google.generativeai as genai
 import os
+import json
 
 def extract_text_from_pdf(pdf_path):
     """
@@ -28,9 +30,9 @@ def extract_text_from_pdf(pdf_path):
         print(f"An error occurred while reading the PDF: {e}")
     return text
 
-def analyze_text_with_gemini(text_content):
+def analyze_text_with_gemini(text_content, pdf_file_name):
     """
-    Sends text content to Gemini AI to extract questions related to sexual harassment
+    Sends text content to Gemini AI to extract questions related to topic_to_find
     along with their surrounding context.
 
     Args:
@@ -53,16 +55,29 @@ def analyze_text_with_gemini(text_content):
     # Craft a precise prompt for the Gemini AI to include context and number the questions
     prompt = f"""
     You are an expert document analyzer. Your task is to carefully read the provided text, which contains questions.
-    Identify and extract ONLY those questions that are directly or Indirectly related to the topic of sexual harassment.
+    Identify and extract ONLY those questions that are directly or Indirectly related to the topic of {topic_to_find}.
     For each such question, also extract the paragraph or case study text that provides its immediate context.
 
-    Present each identified question and its context as a numbered list. Each item in the list should be formatted as follows:
-    [Question Number]. Context: [The relevant paragraph/case study text]
-    Question: [The identified question]
+    Present each identified question as a JSON object with the following structure:
+    {{
+        "Question": Array of Identified Question with same context"[The identified question]",
+        "Context": "[The relevant paragraph/case study text]",
+        "Marks": "[Marks if available in the pdf]"
+    }} 
+    Context: [The relevant paragraph/case study text]
+    Question: [The identified question] Marks: [Marks if available in the pdf]
 
-    Separate each complete entry (Context and Question) with two blank lines.
+    if no context was with the question then you can leave the context empty and If their was two question with same context then you shouldn't write context two times, just add the question in the array of questions.
+    
+    In the end return the JSON array of all identified questions and their contexts. like this 
+    {{"filename":{pdf_file_name},
+    "Question": then the above questin block in this list
+    }}
+
+    Dont write JSON in the start and end of the response, just return the JSON array of all identified questions and their contexts.
+    Dont write triple backtick strings, I dont want markdown formatting.
     Do not include any other text, explanations, or introductory/concluding remarks.
-    If no questions related to sexual harassment are found, respond with "No relevant questions found."
+    If no questions related to {topic_to_find} are found, respond with "No relevant questions found."
 
     Here is the text to analyze:
 
@@ -74,7 +89,7 @@ def analyze_text_with_gemini(text_content):
         response = model.generate_content(prompt)
         # Check if the response contains content
         if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-            return response.candidates[0].content.parts[0].text
+            return extract_json_from_response(response.candidates[0].content.parts[0].text)
         else:
             print("Gemini AI did not return any content.")
             return "No relevant questions found."
@@ -82,36 +97,51 @@ def analyze_text_with_gemini(text_content):
         print(f"An error occurred during Gemini API call: {e}")
         return "Error during AI analysis."
 
-def write_questions_to_file(questions_text, output_file_path, mode="a"):
+def write_questions_to_file(data, json_file_name):
     """
     Writes the extracted questions to a specified text file.
 
     Args:
-        questions_text (str): The text containing the questions.
-        output_file_path (str): The path to the output text file.
-        mode (str): File open mode ('w' for write/overwrite, 'a' for append).
+        data (str): The text containing the questions.
+        json_file_name (str): The path to the output text file.
     """
+    
     try:
-        with open(output_file_path, mode, encoding="utf-8") as f:
-            f.write(questions_text.strip()) # .strip() to remove leading/trailing whitespace
-        print(f"Successfully written questions to {output_file_path} in '{mode}' mode.")
+            with open(f"json/{json_file_name}", "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print(f"An error occurred while writing to the file: {e}")
+            print(f"Failed to write JSON to file: {e}")
 
+def extract_json_from_response(response_text):
+    """
+    Extracts JSON from a code block string like:
+    ```json
+    {...}
+    ```
+    """
+    # Match anything between triple backticks
+    match = re.search(r"```(?:json)?\s*(.*?)```", response_text, re.DOTALL)
+    if match:
+        json_str = match.group(1).strip()
+        return json.loads(json_str)
+    else:
+        raise ValueError("No JSON code block found in the response.")
+    
 if __name__ == "__main__":
-    # Define file paths
-    pdf_folder = "question_papers"
-    output_file_name = "extracted_question.txt"
-    output_file_path = output_file_name # Output extracted_question.txt in the current directory
-
-    # Clear the output file at the beginning to ensure a clean start
-    write_questions_to_file("", output_file_path, mode="w")
+    
+    # Asking for file paths from the User
+    pdf_folder = input("Enter the path to the folder containing PDF files: ").strip() or "question_papers"
+    # output_file_name = input("Enter the name of the output file (default: extracted_question.txt): ").strip() or "extracted_question.txt"
+    # output_file_path = output_file_name # Output extracted_question.txt in the current directory
 
     # Get all PDF files in the specified folder
     pdf_files = [f for f in os.listdir(pdf_folder) if f.endswith('.pdf')]
 
+    topic_to_find = input("Enter the topic to find: ").strip() or "sexual harassment"
+    
     if not pdf_files:
         print(f"No PDF files found in the folder: {pdf_folder}")
+    
     else:
         print(f"Found {len(pdf_files)} PDF files to process in {pdf_folder}.")
         for i, pdf_file_name in enumerate(pdf_files):
@@ -124,21 +154,18 @@ if __name__ == "__main__":
 
             if pdf_content:
                 print("PDF text extraction complete. Analyzing with Gemini AI...")
+                
                 # Step 2: Analyze text with Gemini AI
-                relevant_questions = analyze_text_with_gemini(pdf_content)
-
+                relevant_questions = analyze_text_with_gemini(pdf_content, pdf_file_name)
+    
                 # Step 3: Write extracted questions to a file
-                if relevant_questions and relevant_questions.strip() != "No relevant questions found.":
-                    # Add a separator before writing if it's not the first file
-                    if i > 0:
-                        write_questions_to_file("\n\n", output_file_path, mode="a") # Separator between PDFs
-
-                    # Add PDF name header
-                    header = f"--- Questions from {pdf_file_name} ---\n"
-                    write_questions_to_file(header, output_file_path, mode="a")
-                    write_questions_to_file(relevant_questions, output_file_path, mode="a")
+                if relevant_questions and relevant_questions != "No relevant questions found." and relevant_questions != "Error during AI analysis.":
+                    newPath = pdf_file_name.replace(".pdf", ".json")
+                    write_questions_to_file(relevant_questions, newPath)
+                    print(f"Relevant questions from {pdf_file_name} have been written to {newPath}.")
                 else:
                     print(f"No relevant questions were identified in {pdf_file_name} or an error occurred during analysis.")
+   
             else:
                 print(f"Could not extract content from {pdf_file_name}. Skipping analysis for this file.")
 

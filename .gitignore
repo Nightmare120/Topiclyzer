@@ -10,3 +10,6 @@ extracted_question.txt
 extracted_question.json
 output.json
 *.md
+json/*.json
+markdown/*.md
+question_papers/*.pdf
