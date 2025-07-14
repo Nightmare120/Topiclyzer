@@ -1,5 +1,4 @@
 .venv
-question_papers/
 webpage.html
 *.pyc
 __pycache__/
@@ -11,5 +10,6 @@ extracted_question.json
 output.json
 *.md
 json/*.json
-markdown/*.md
+answers_markdown/*.md
 question_papers/*.pdf
+generated_pdf/*.pdf

@@ -1,143 +1,139 @@
-import json
 import os
-import re
-import asyncio
-import aiohttp
+import json
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-async def generate_answer_with_gemini(full_question_text: str, api_key: str) -> str:
+# Load environment variables from a .env file
+load_dotenv()
+
+# Configure Google Gemini API
+# Make sure to set your GEMINI_API_KEY as an environment variable (e.g., in a .env file)
+try:
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+except KeyError:
+    print("Error: GEMINI_API_KEY environment variable not set.")
+    print("Please set the GEMINI_API_KEY environment variable with your Gemini API key.")
+    print("You can do this by creating a .env file in the same directory as this script with the content: GEMINI_API_KEY='YOUR_API_KEY_HERE'")
+    exit()
+
+def generate_answer_with_gemini(question_text: str, context_text: str, marks: str) -> str:
     """
-    Generates a detailed and comprehensive answer for a given combined question text
-    (including its context) using the Gemini API.
+    Generates an answer using the Google Gemini API based on the provided question and context.
+
+    Args:
+        question_text: The question to be answered.
+        context_text: The context relevant to the question.
+        marks: marks for the question
+
+    Returns:
+        The AI-generated answer as a string, or an error message if generation fails.
     """
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-
-    # The full_question_text already contains the context and the specific question.
-    # We instruct Gemini to provide a detailed answer (at least 300 words) based on this combined input.
-    prompt_for_gemini = (
-        f"Please provide a detailed and comprehensive answer, at least 300 words long, "
-        f"based on the following text. Focus on directly answering the question presented within the text "
-        f"while elaborating on all relevant details from the context.\n\n"
-        f"{full_question_text}\n\n"
-        f"Answer:"
-    )
-
-    chat_history = [{ "role": "user", "parts": [{ "text": prompt_for_gemini }] }]
-
-    payload = {
-        "contents": chat_history
-    }
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(api_url, json=payload, headers={'Content-Type': 'application/json'}) as response:
-                response.raise_for_status() # Raise an exception for HTTP errors
-                result = await response.json()
+        # # Initialize the GenerativeModel with 'gemini-pro'
+        model = genai.GenerativeModel('gemini-2.0-flash')
 
-                if result.get("candidates") and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts"):
-                    return result["candidates"][0]["content"]["parts"][0]["text"]
-                else:
-                    print(f"Warning: Unexpected response structure for input: {full_question_text[:100]}...")
-                    return "Could not generate an answer due to unexpected API response."
-    except aiohttp.ClientError as e:
-        print(f"Error calling Gemini API: {e}")
-        return f"Error: Failed to connect to Gemini API. {e}"
+        # Construct the prompt for the Gemini API
+        # We instruct the model to use the context to answer the question.
+        prompt = f"Context: {context_text}\n\nQuestion: {question_text}\n\n generate the answer for the question using context for the {marks} Answer:"
+
+        # Generate content using the model
+        response = model.generate_content(prompt)
+
+        # Return the text from the response
+        return response.text
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return f"Error: An unexpected error occurred. {e}"
+        print(f"An error occurred during Gemini API call: {e}")
+        return "Error: Could not generate answer."
 
-async def main():
-    input_file = "extracted_question.txt"
-    output_file = "output.json"
-    
-    # List to store dictionaries of {"full_question_text": ...}
-    parsed_questions = [] 
-    output_data = [] # List to store final output: {"question": ..., "answer": ...}
+def process_json_files(json_folder: str = "json", output_folder: str = "answers_markdown"):
+    """
+    Processes all JSON files in the specified input folder.
+    For each question in a JSON file, it generates an answer using the Gemini API
+    and then creates a Markdown file with the questions and generated answers.
 
-    # Attempt to get API key from environment variable
-    api_key = os.getenv("GEMINI_API_KEY", "")
-
-    if not api_key:
-        print("Warning: GEMINI_API_KEY environment variable not set.")
-        print("Please set the GEMINI_API_KEY environment variable or hardcode your API key in the script.")
+    Args:
+        json_folder: The path to the folder containing the input JSON files.
+        output_folder: The path to the folder where output Markdown files will be saved.
+    """
+    # Ensure the input JSON folder exists
+    if not os.path.exists(json_folder):
+        print(f"Error: The input folder '{json_folder}' does not exist.")
         return
 
-    # Variables for parsing the input file
-    current_question_block_lines = []
-    
-    # Read questions and their contexts from the input file
-    try:
-        with open(input_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            
-            i = 0
-            while i < len(lines):
-                stripped_line = lines[i].strip()
+    # Create the output Markdown folder if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
+    print(f"Output Markdown files will be saved in: {os.path.abspath(output_folder)}\n")
 
-                # If we encounter a file header or a new context, it marks the start of a new question block
-                if stripped_line.startswith("--- Questions from") or stripped_line.startswith("Context:"):
-                    # If there was a previous block, save it
-                    if current_question_block_lines:
-                        # Filter out the "--- Questions from" lines before joining
-                        filtered_block = [
-                            line for line in current_question_block_lines 
-                            if not line.startswith("--- Questions from")
-                        ]
-                        parsed_questions.append("\n".join(filtered_block).strip())
-                        current_question_block_lines = [] # Reset for the new block
-                    
-                    # Add the current line (Context: or --- Questions from) to the new block
-                    current_question_block_lines.append(lines[i].strip())
-                    i += 1
-                    
-                    # Continue adding lines until the next "Context:", "--- Questions from", or end of file
-                    while i < len(lines) and not (lines[i].strip().startswith("--- Questions from") or lines[i].strip().startswith("Context:")):
-                        current_question_block_lines.append(lines[i].strip())
-                        i += 1
-                else:
-                    i += 1 # Move to next line if not a start of a block
+    # Iterate through all files in the specified JSON folder
+    for filename in os.listdir(json_folder):
+        # Process only files ending with .json
+        if filename.endswith(".json"):
+            json_filepath = os.path.join(json_folder, filename)
+            # Create the corresponding Markdown filename (e.g., sample.json -> sample.md)
+            markdown_filename = os.path.splitext(filename)[0] + ".md"
+            markdown_filepath = os.path.join(output_folder, markdown_filename)
 
-            # Add the last block if it exists
-            if current_question_block_lines:
-                # Filter out the "--- Questions from" lines before joining for the last block
-                filtered_block = [
-                    line for line in current_question_block_lines 
-                    if not line.startswith("--- Questions from")
-                ]
-                parsed_questions.append("\n".join(filtered_block).strip())
+            print(f"Processing JSON file: {json_filepath}")
 
-    except FileNotFoundError:
-        print(f"Error: The file '{input_file}' was not found.")
-        return
-    except Exception as e:
-        print(f"Error reading '{input_file}': {e}")
-        return
+            try:
+                with open(json_filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
-    if not parsed_questions:
-        print("No questions found in the input file.")
-        return
+                # Get the filename from the JSON data, or use the base filename if not present
+                file_identifier = data.get('filename', os.path.splitext(filename)[0])
 
-    print(f"Found {len(parsed_questions)} question blocks. Generating answers...")
+                with open(markdown_filepath, 'w', encoding='utf-8') as md_file:
+                    # Write the main heading using the 'filename' from the JSON
+                    md_file.write(f"# {file_identifier}\n\n")
+                    md_file.write("### Questions and Answers\n\n")
 
-    # Generate answers for each full question block
-    for i, full_question_text in enumerate(parsed_questions):
-        print(f"Processing question block {i+1}/{len(parsed_questions)}: {full_question_text[:70]}...") # Show first 70 chars
-        
-        # Pass the entire block as the question to the Gemini API function
-        answer = await generate_answer_with_gemini(full_question_text, api_key) 
-        
-        output_data.append({
-            "question": full_question_text, # The entire block (context + question)
-            "answer": answer
-        })
-        print(f"Finished question block {i+1}.")
+                    questions_array = data.get("Question", [])
+                    if not questions_array:
+                        md_file.write("No questions found in this JSON file.\n")
+                        print(f"No questions found in {json_filepath}")
+                        continue
 
-    # Write the questions and answers to the output JSON file
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(output_data, f, indent=4, ensure_ascii=False)
-        print(f"\nSuccessfully generated answers and saved them to '{output_file}'.")
-    except Exception as e:
-        print(f"Error writing to '{output_file}': {e}")
+                    # Iterate through each question block in the 'Questions' array
+                    for i, q_block in enumerate(questions_array):
+                        questions_list = q_block.get("Question", [])
+                        context = q_block.get("Context", "")
+                        marks = q_block.get("Marks", "(Not provided)") # Default if Marks is missing
+
+                        # Handle cases where 'Question' might be a single string instead of a list, or an empty list
+                        if isinstance(questions_list, str):
+                            questions_list = [questions_list]
+                        elif not isinstance(questions_list, list):
+                            questions_list = [] # Ensure it's iterable
+
+                        if not questions_list:
+                            print(f"Warning: Question list is empty in block {i+1} of {json_filepath}")
+                            continue
+
+                        # Process each individual question within the question block
+                        for j, question_text in enumerate(questions_list):
+                            # Question numbering starts from 1 for each question block
+                            # If there are multiple questions in one block, use 1.1, 1.2, etc.
+                            question_number_display = f"{i + 1}.{j + 1}" if len(questions_list) > 1 else str(i + 1)
+
+                            md_file.write(f"### Question No: {question_number_display}\n")
+                            md_file.write(f"**Context:** {context.strip()}\n")
+                            md_file.write(f"**Question:** {question_text.strip()}\n")
+                            md_file.write(f"**Marks:** {marks.strip()}\n")
+
+                            # Generate the answer using Gemini API
+                            answer = generate_answer_with_gemini(question_text.strip(), context.strip(),marks)
+                            md_file.write(f"**Answer:** {answer.strip()}\n\n")
+
+                print(f"Successfully generated Markdown file: {markdown_filepath}")
+
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON from {json_filepath}: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred while processing {json_filepath}: {e}")
+    print("\nAll specified JSON files have been processed.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+
+    print("\n--- Starting the JSON file processing and answer generation ---")
+    process_json_files()
+    print("\n--- Processing complete. Check the 'answers_markdown' folder for your generated Markdown files. ---")
