@@ -57,7 +57,7 @@ def analyze_text_with_gemini(text_content, pdf_file_name,topic_to_find):
     # Craft a precise prompt for the Gemini AI to include context and number the questions
     prompt = f"""
     You are an expert document analyzer. Your task is to carefully read the provided text, which contains questions.
-    Identify and extract ONLY those questions that are directly or Indirectly related to the topic of {topic_to_find}.
+    Identify and extract ONLY those questions that are directly related to the topic of {topic_to_find}.
     For each such question, also extract the paragraph or case study text that provides its immediate context.
 
     Present each identified question as a JSON object with the following structure:
@@ -131,7 +131,7 @@ def extract_json_from_response(response_text):
     
 def question_extractor():
     # Asking for file paths from the User
-    pdf_folder = input("Enter the path to the folder containing PDF files: ").strip() or "question_papers"
+    pdf_folder = input("Enter the path to the folder containing PDF files (default: question_papers/): ").strip() or "question_papers"
     # output_file_name = input("Enter the name of the output file (default: extracted_question.txt): ").strip() or "extracted_question.txt"
     # output_file_path = output_file_name # Output extracted_question.txt in the current directory
 
@@ -170,7 +170,7 @@ def question_extractor():
             else:
                 print(f"Could not extract content from {pdf_file_name}. Skipping analysis for this file.")
 
-        print("\n--- All PDF files processed. Check 'extracted_question.txt' for results. ---")
+        print("\n--- All PDF files processed ---")
 
 if __name__ == "__main__":
     question_extractor()

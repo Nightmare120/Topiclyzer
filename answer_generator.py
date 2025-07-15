@@ -116,7 +116,10 @@ def process_json_files(json_folder: str = "json", output_folder: str = "answers_
                             question_number_display = f"{i + 1}.{j + 1}" if len(questions_list) > 1 else str(i + 1)
 
                             md_file.write(f"### Question No: {question_number_display}\n")
-                            md_file.write(f"**Context:** {context.strip()}\n")
+                            # Write the context if it exists
+                            if context:
+                                md_file.write(f"** ** {context.strip()}\n")
+
                             md_file.write(f"**Question:** {question_text.strip()}\n")
                             md_file.write(f"**Marks:** {marks.strip()}\n")
 
